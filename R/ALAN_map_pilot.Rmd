@@ -1,0 +1,850 @@
+---
+title: "Pilot analysis of ALAN map protocol"
+author: "Yefeng Yang, Shinichi Nakagawa"
+output:
+    rmdformats::readthedown:
+      code_folding: hide
+      code_download: true
+      toc_depth: 4
+editor_options:
+  chunk_output_type: console
+---
+
+    
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+message = FALSE,
+warning = FALSE,
+cache = TRUE,
+tidy = TRUE,
+echo = TRUE
+)
+
+rm(list = ls())
+```
+
+### Setup and data organisation
+
+```{r setup, results = 'hide'}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(readr,
+               readxl,
+               plyr,
+               here,
+               tibble,
+               tidyverse,
+               janitor,
+               dplyr,
+               stringr,
+               knitr,
+               forcats,
+               ggplot2,
+               hrbrthemes,
+               bibliometrix,
+               patchwork,
+               migest,
+               circlize,
+               rotl,
+               ape,
+               ggnewscale,
+               ggtree,
+               ggtreeExtra,
+               igraph,
+               stringi,
+               tidystringdist,
+               stringdist,
+               fuzzyjoin,
+               #ggthemes,
+               viridis,
+               cowplot,
+               mapproj)
+
+
+# function getAltmetrics(), the only parameter is doi; see example below
+getAltmetrics <- function(doi = NULL,
+                          foptions = list(),
+                           ...) {
+    if (!is.null(doi)) doi <- stringr::str_c("doi/", doi)
+    identifiers <- purrr::compact(list(doi))
+    if (!is.null(identifiers)) {
+      ids <- identifiers[[1]]
+    }
+    base_url <- "http://api.altmetric.com/v1/"
+    #request <- httr::GET(paste0(base_url, ids), httr::add_headers("user-agent" = "#rstats rAltmertic package https://github.com/ropensci/rAltmetric"))
+    request <- httr::GET(paste0(base_url, ids))
+    results <-
+      jsonlite::fromJSON(httr::content(request, as = "text"), flatten = TRUE)
+    results <- rlist::list.flatten(results)
+    class(results) <- "altmetric"
+    results
+}
+```
+
+
+
+
+# Systematic map and network analysis
+
+``` {r datasets, results = 'hide'}
+# load bibliographic records
+## convert into dataframe
+bib.test.df <- convert2df(here("Data","bib_test_set.csv"), dbsource = "scopus", format = "csv") # note that using here function does work for data wrangling
+
+# load extracted data
+datpath <- "./Data/ALAN_map_protocol_extraction_pilot_V3(21+13).xlsx"
+# Splitting list of tabs into separate dataframes
+tab_names <- excel_sheets(path = datpath)
+# creating a list of dataframes per tab
+list_tab <- lapply(tab_names, function(x) read_excel(path = datpath, sheet = x))
+# assigning tab names to each dataframe
+names(list_tab) <- tab_names
+# out of list
+list2env(list_tab, .GlobalEnv)
+```
+
+
+# Objective 1 - systematic (evidence) map {.tabset}
+
+## Sub-aim 1.1 - taxonomic distribution
+
+The phylogenetic breadth and taxonomic distribution in ALAN secondary research (e.g., humans, model animals, wild animals, flora, environment, ecosystem)
+
+```{r Taxonomic distribution}
+# calculate percentage
+Population.dist <- tabyl(Population, Population_code)  %>% mutate(percent = round(percent,4))
+
+# custom color
+cols <- c("Agricultural animals" = "#E69F00", 
+          "Environment and Ecosystem" = "#E69F00",
+          "Flora" = "#E69F00",
+          "Humans" = "#E69F00",
+          "Lab animals" = "#E69F00",
+          "Wild animals" = "#E69F00")
+
+# fct_reorder(name, desc(val))
+Fig1a <- Population.dist %>%
+  mutate(Population_code = forcats::fct_reorder(Population_code, percent)) %>% ggplot(aes(x = Population_code, y = percent, fill = Population_code)) +
+  geom_col(aes(), width = 0.7) +
+  scale_fill_manual(values = cols) +
+  coord_flip() + 
+  labs(y = "Percent (%)") +
+  #ylim(0,100)+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank()) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+   geom_text(aes(label=scales::percent(percent, accuracy = 1)), size = 3, position = position_stack(vjust = 0.5), color = "white", fontface = "bold") +
+  geom_text(aes(label = paste0("(", "italic(n)==", n, ")")), parse = T, hjust = -0.2) +
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.text.y = element_text(color = "black"),
+        axis.title.y = element_text(color = "black"),
+        axis.ticks.y = element_blank()) +
+  labs(title = "Taxonomic distribution", x = "")
+ 
+
+ 
+# pdf(file = "Taxonomy.pdf", width = 8, height = 8)
+
+png(filename = "./Taxonomy.png", width = 9, height = 6, units = "in", type = "windows", res = 400)
+Population.dist %>%
+  mutate(Population_code = forcats::fct_reorder(Population_code, percent)) %>% ggplot(aes(x = Population_code, y = percent, fill = Population_code)) +
+  geom_col(aes(), width = 0.7) +
+  scale_fill_manual(values = cols) +
+  coord_flip() + 
+  labs(y = "Percent (%)") +
+  #ylim(0,100)+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank()) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+   geom_text(aes(label=scales::percent(percent, accuracy = 1)), size = 6, position = position_stack(vjust = 0.5), color = "white", fontface = "bold") +
+  geom_text(aes(label = paste0("(", "italic(n)==", n, ")")), parse = T, hjust = -0.2) +
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.text.y = element_text(color = "black", size = 16),
+        axis.title.y = element_text(color = "black"),
+        axis.ticks.y = element_blank()) +
+  labs(x = "")
+dev.off()
+
+
+```
+
+## Sub-aim 1.2 - outcome distribution
+
+The quantity distribution of biological functions summarized in ALAN secondary research (e.g., from gene-, individual-scale to population-, and ecological scale outcomes: physiology, disease, biodiversity, community composition, ecosystem function)
+
+```{r outcome distribution}
+# calculate percentage
+Outcome.dist <- tabyl(Outcome, Outcome_code)  %>% mutate(percent = round(percent,4))
+
+# custom color
+cols <- c("Behaviour" = "#56B4E9", 
+          "Disease" = "#56B4E9",
+          "Environment and Ecology" = "#56B4E9",
+          "Life-history" = "#56B4E9",
+          "Morphology" = "#56B4E9",
+          "Physiology" = "#56B4E9")
+
+Fig1b <- Outcome.dist %>%
+  mutate(Outcome_code = forcats::fct_reorder(Outcome_code, percent)) %>% ggplot(aes(x = Outcome_code, y = percent*100, fill = Outcome_code)) +
+  geom_col(aes(), width = 0.7) +
+  scale_fill_manual(values = cols) +
+  coord_flip() + 
+  labs(y = "Percent (%)") +
+  #ylim(0,100)+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.y = element_blank()) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+   geom_text(aes(label=scales::percent(percent, accuracy = 1)), size = 3, position = position_stack(vjust = 0.5), color = "white", fontface = "bold") +
+  geom_text(aes(label = paste0("(", "italic(n)==", n, ")")), parse = T, hjust = -0.2) +
+  # theme_classic() +
+  # theme_minimal_hgrid() +
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.text.y = element_text(color = "black"),
+        axis.title.y = element_text(color = "black")) +
+  labs(title = "Biological function", x = "")
+  
+  
+Fig1b
+
+```
+
+
+## Sub-aim 1.2 - scale distribution 
+
+The quantity distribution of biological scales summarized in ALAN secondary research (e.g., from gene-, individual-scale to population-, and ecological scale outcomes: physiology, disease, biodiversity, community composition, ecosystem function)
+
+```{r scale distribution}
+# calculate percentage
+Scale.dist <- tabyl(Scale, Outcome_scale)  %>% mutate(percent = round(percent,4))
+
+# custom color
+cols <- c("Environment and Ecosystem" = "#009E73", 
+          "Gene/molecule/cell" = "#009E73",
+          "Individual" = "#009E73",
+          "Population" = "#009E73")
+
+
+Fig1c <- Scale.dist %>%
+  mutate(Outcome_scale = forcats::fct_reorder(Outcome_scale, percent)) %>% ggplot(aes(x = Outcome_scale, y = percent*100, fill = Outcome_scale)) +
+  geom_col(aes(), width = 0.7) +
+  scale_fill_manual(values = cols) +
+  coord_flip() + 
+  labs(y = "Percent (%)") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.y = element_blank()) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+   geom_text(aes(label=scales::percent(percent, accuracy = 1)), size = 3, position = position_stack(vjust = 0.5), color = "white", fontface = "bold") +
+  geom_text(aes(label = paste0("(", "italic(n)==", n, ")")), parse = T, hjust = -0.2) +
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.text.y = element_text(color = "black"),
+        axis.title.y = element_text(color = "black")) +
+  labs(title = "Biological scale", x = "")
+  
+  
+Fig1c
+
+```
+
+
+## Sub-aim 1.3 - distribution of ALAN sources
+
+The quantity distribution of the sources of ALAN, summarized in ALAN secondary research (e.g., electronic device use at night, urbanization, shift work).
+
+```{r outcome distribution}
+# calculate percentage
+Exposure.dist <- tabyl(Exposure, Exposure_code)  %>% mutate(percent = round(percent,4))
+
+# custom color
+cols <- c("Electronic device at night" = "#CC79A7", 
+          "Shift work" = "#CC79A7",
+          "Unclear" = "#CC79A7",
+          "Urbanization" = "#CC79A7")
+
+Fig1d <- Exposure.dist %>%
+  mutate(Exposure_code = forcats::fct_reorder(Exposure_code, percent)) %>% ggplot(aes(x = Exposure_code, y = percent*100, fill = Exposure_code)) +
+  geom_col(aes(), width = 0.7) +
+  scale_fill_manual(values = cols) +
+  coord_flip() + 
+  labs(y = "Percent (%)") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.y = element_blank()) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+   geom_text(aes(label=scales::percent(percent, accuracy = 1)), size = 3, position = position_stack(vjust = 0.5), color = "white", fontface = "bold") +
+  geom_text(aes(label = paste0("(", "italic(n)==", n, ")")), parse = T, hjust = -0.2) +
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.text.y = element_text(color = "black"),
+        axis.title.y = element_text(color = "black")) +
+  labs(title = "ALAN source", x = "")
+  
+  
+Fig1d
+
+
+```
+
+
+# Objective 2 - bibliometric map {.tabset}
+
+## Sub-aim 2.1 - Descriptive analysis
+
+Visualizing the trends and impacts of ALAN secondary research on the map created in Objective 1 (e.g., the temporal and spatial trends, the most influential literature).
+
+### Summary
+
+```{r summary of bib, results='hide'}
+bib.res <- biblioAnalysis(bib.test.df)
+bib.res.sum <- summary(bib.res, k=5, pause=F, width=130)
+```
+
+### Time trend
+
+``` {r temporal}
+# merge data
+Study_characteristic.bib <- left_join(Study_characteristic, bib_test_set, by = c("DOI_manual" = "DOI"))
+
+
+fig2a <- Study_characteristic.bib %>% 
+  dplyr::count(Year) %>%
+  ggplot(aes(x = Year, y = n)) +
+  geom_col(aes(), width = 0.7) +
+  geom_smooth(se=F) +
+  xlim(1998.5, 2022.5) +
+  ylim(0, 6) +
+  geom_text(aes(label = n),vjust = -0.2) +
+  theme_classic() +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(x = "Year", y = "Article count")+
+  theme(legend.position = "none", axis.title.x = element_text(size = 10)) # potentially using area curve - # http://www.sthda.com/english/wiki/ggplot2-area-plot-quick-start-guide-r-software-and-data-visualization
+
+fig2a
+
+#exported PDF as 5x7 inch
+```
+
+
+### Geigraphical trend
+
+```{r geo}
+## geographical trend
+bib2.test.df <- metaTagExtraction(bib.test.df, Field = "AU1_CO", sep = ";") 
+bib2.test.df <- metaTagExtraction(bib2.test.df, Field = "AU_CO", sep = ";") 
+
+#save counts in a data frame
+bib2.test.df %>% group_by(AU1_CO) %>% dplyr::count() %>% filter(!is.na(AU1_CO)) -> au.country
+
+#load map data #https://www.riinu.me/2022/02/world-map-ggplot2/
+world_map <- map_data("world") %>% 
+  filter(! long > 180) #remove countries with longitude >180 to make equal projection-like map without artifacts
+#janitor::tabyl(world_map$region) #note that United Kingdom is UK here
+
+# Normalize country names to match regions on the world map
+# check matching (au.country$country) %in% world_map$region
+au.country$country <- str_to_title(au.country$AU1_CO)
+au.country$country [au.country$country  == "Korea"] <- "South Korea"
+au.country$country [au.country$country  == "Usa"] <- "USA"
+au.country$country [au.country$country  == "United Kingdom"] <- "UK" 
+
+
+## colour all regions on the map:
+emptymap <- tibble(region = unique(world_map$region), n_0 = rep(0,length(unique(world_map$region)))) #create table with all counts as 0
+fullmap <- left_join(emptymap, au.country, by = c("region" = "country")) #join with actual counts table
+fullmap$N <- fullmap$n_0 + fullmap$n # make new column for fixed counts
+fullmap$N[is.na(fullmap$N)] <- 0 #change NA to 0 for regions with no counts
+
+fig2b <- fullmap %>% 
+  ggplot(aes(fill = N, map_id = region)) +
+  geom_map(map = world_map) +
+  expand_limits(x = world_map$long, y = world_map$lat) +
+  coord_map("moll") +
+  theme_map(line_size = 0.5) + 
+  theme(legend.position="right") +
+  scale_fill_gradient(low = "white", high = "#D55E00", limits = c(1, 12),
+                      guide = guide_colorbar(direction = "vertical.")) +
+  guides(fill = guide_colourbar(barwidth = unit(15, units = "mm"), barheight = unit(20, units = "mm"))) + 
+  labs(fill='Counts')
+# http://www.sthda.com/english/articles/33-social-network-analysis/135-network-visualization-essentials-in-r/
+
+
+fig2b
+```
+
+
+## Sub-aim 2.3 - connectedness between disciplines
+
+Characterising the connectedness of ALAN secondary research among different disciplines (e.g., the number of co-citations of different disciplines’ secondary literature)
+
+```{r discipline coupling}
+## merge data
+Study_characteristic.bib <- left_join(bib_test_set, Study_characteristic, by = c("DOI" = "DOI_manual"))
+
+NetMatrix <- biblioNetwork(bib.test.df, analysis = "coupling",network = "references", sep = ";")
+
+net_matrix <- as.matrix(NetMatrix)
+diag(net_matrix) <- 0 #get rid of counts for the same papers
+
+# replacing names with discipline_code
+rownames(net_matrix) <- Study_characteristic.bib$Evidence_stream
+colnames(net_matrix) <- rownames(net_matrix)
+
+# reducing matrix according to discipline_code
+rect_matrix <- t(rowsum(t(net_matrix), group = colnames(net_matrix), na.rm = T))
+small_matrix <- rowsum(rect_matrix, group = rownames(rect_matrix))
+
+# getting rid of lower triangle (as this is duplication of info)
+small_matrix[lower.tri(small_matrix)] <- 0 
+
+# small_matrix - for getting percents
+# percent of shared citations with other disciplines
+# Biomedicine 
+# (62 + 63) / (62 + 63 + 176)
+
+#cross-disciplinary
+# (39+2) / (39+2+8)
+
+#toxicology
+# (2+2+3 +1) / (2+2+3+1+42)
+
+#biomed
+# (39 + 97 + 2) / (39 + 97 + 2 + 616)
+
+#agriculture
+# (25 + 2 + 25 + 3) / (25 + 2 + 25 + 3 + 48)
+
+
+# my.cols <- (c(agriculture = "#66C2A5", biomed = "#FC8D62", crossdisciplinary = "#8DA0CB", ecoevo = "#E78AC3", toxicology = "#A6D854"))
+ 
+circos.clear()           
+# par(mar = c(0, 0, 0, 0), mfrow = c(1, 1))
+
+# chord diagram
+#circos.par()
+fig3b <- chordDiagramFromMatrix(small_matrix)
+fig3b
+
+
+#TODO manually add spaces and hyphens in discipline names
+#Exported pdf as 7 x 4 inches
+
+
+png(filename = "./chord_discipline.png", width = 4, height = 4, units = "in", type = "windows", res = 400)
+par(cex = 0.8, mar = c(0, 0, 0, 0))
+chordDiagramFromMatrix(small_matrix)
+dev.off()
+
+```
+
+
+
+## Intellectual structure 
+
+Co-citation network quantifying and visualizing the intellectual structure of ALAN secondary research (e.g., connections between co-citation clusters of references).
+
+```{r co-citation network}
+
+NetMatrix <- biblioNetwork(bib2.test.df, analysis = "co-citation", 
+                           network = "references", sep = ";")
+
+
+net = networkPlot(NetMatrix, n = 30, Title = "Co-Citation Network", type = "fruchterman", size.cex=TRUE, size=20, remove.multiple=FALSE, labelsize=1,edgesize = 10, edges.min=5)
+```
+
+
+## Collaboration network
+
+Collaboration network quantifying and visualizing the social structure of ALAN secondary research (e.g., uncovering dominating countries, and under-representative countries)
+
+```{r country network}
+bib2.test.df <- metaTagExtraction(bib.test.df, Field = "AU1_CO", sep = ";") 
+bib2.test.df <- metaTagExtraction(bib2.test.df, Field = "AU_CO", sep = ";") 
+NetMatrix <- biblioNetwork(bib2.test.df, analysis = "collaboration", 
+                           network = "countries", sep = ";")
+
+net_matrix <- as.matrix(NetMatrix)
+diag(net_matrix) <- 0 #get rid of collaboration with same country
+
+# getting rid of lower triangle
+net_matrix[lower.tri(net_matrix)] <- 0 
+# colnames(net_matrix) - change to title case:
+colnames(net_matrix) <- str_to_title(colnames(net_matrix))
+#rownames(net_matrix) - change to title case:
+rownames(net_matrix) <- str_to_title(rownames(net_matrix))
+#Fix "Usa" to "USA" :
+colnames(net_matrix)[colnames(net_matrix) == "Usa"] <- "USA"
+rownames(net_matrix)[rownames(net_matrix) == "Usa"] <- "USA"
+#change "UNITED KINGDOM" to "UK" for easier plotting:
+colnames(net_matrix)[colnames(net_matrix) == "United Kingdom"] <- "UK"
+rownames(net_matrix)[rownames(net_matrix) == "United Kingdom"] <- "UK"
+
+#change "Korea" to "Sounth Korea" for easier plotting:
+colnames(net_matrix)[colnames(net_matrix) == "Korea"] <- "South Korea"
+rownames(net_matrix)[rownames(net_matrix) == "Korea"] <- "South Korea"
+
+
+circos.clear()
+#my.cols2 <- c(USA = "#DCDCDC", Australia = "#000000", Netherlands = "#A9A9A9", UK = "#2F4F4F", Brazil = "#C0C0C0", Canada = "slategray", Newzealand = "gainsboro", France = "#778899", Germany = "#808080",Italy = "#696969", Argentina = "#DCDCDC", China = "#000000", Belgium = "#A9A9A9", Sweden = "#2F4F4F", Iran = "#C0C0C0", Mexico = "#778899", Poland = "#A9A9A9")
+
+circos.clear()
+
+Fig5a <- chordDiagram(net_matrix, annotationTrack = "grid", preAllocateTracks = 1)
+
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xlim = get.cell.meta.data("xlim")
+  ylim = get.cell.meta.data("ylim")
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(mean(xlim), ylim[1] + .1, sector.name, facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5))
+  circos.axis(h = "top", labels.cex = 0.5, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+}, bg.border = NA)
+
+
+Fig5a
+
+#TODO may need to change shade of grey for USA
+```
+
+
+```{r figpanel, eval = FALSE}
+# Panel
+## Saving panel as a PDF
+pdf(file = "Countries.pdf", width = 8, height = 10)
+
+# layout(matrix(1:2, 1, 2))
+par(mfrow = c(2, 1), mar = c(0.5, 0.5, 0.9, 0.5), bg = rgb(1, 1, 1, 0.1) , adj = 0, cex = 1.1)
+
+fullmap %>% 
+  ggplot(aes(fill = n, map_id = region)) +
+  geom_map(map = world_map) +
+  expand_limits(x = world_map$long, y = world_map$lat) +
+  coord_map("moll") +
+  theme_map(line_size = 0.5) + 
+  theme(legend.position="right") +
+  scale_fill_gradient(low = "#FEE08B", high = "#D53E4F",
+ limits = c(1, 12),
+      guide = guide_colorbar(direction = "vertical.")) +
+  guides(fill = guide_colourbar(barwidth = unit(15, units = "mm"), barheight = unit(20, units = "mm"))) +
+  ggtitle("A")
+         
+         
+circos.clear()
+circos.par(start.degree = 90)
+circos.par("circle.margin" = c(0.1, 0.1, 0.5, 0.1))
+fig1 <- chordDiagram(net_matrix2, annotationTrack = "grid", preAllocateTracks = 1, grid.col = my.cols2)
+#change direction of labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xlim = get.cell.meta.data("xlim")
+  ylim = get.cell.meta.data("ylim")
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(mean(xlim), ylim[1] + .3, sector.name, facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5))
+  circos.axis(h = "top", labels.cex = 0.3, major.tick.percentage = 0.2, sector.index = sector.name, track.index = 2)
+}, bg.border = NA)
+title("B", font.main = 1, cex.main = 1.2)
+dev.off()
+```
+
+
+## Conceptual structure
+
+Word co-occurrence network quantifying and visualizing the conceptual structure of ALAN research (e.g., keyword distribution and clusters drawn from ALAN secondary literature that represents research fronts)
+
+```{r co-occurrence network}
+#bib.test.df <- metaTagExtraction(bib.test.df, Field = "AB", sep = ";") 
+bib2.test.df <- termExtraction(
+  bib.test.df,
+  Field = "AB",
+  ngrams = 1,
+  stemming = T,
+  language = "english",
+  remove.numbers = TRUE,
+  remove.terms = NULL,
+  keep.terms = NULL,
+  synonyms = NULL,
+  verbose = TRUE
+)
+NetMatrix <- biblioNetwork(bib2.test.df, analysis = "co-occurrences", 
+                           network = "keywords", sep = ";") # abstracts
+
+net=networkPlot(NetMatrix, normalize="association", n = 50, Title = "Keyword Co-occurrences", type = "fruchterman", size.cex=TRUE, size=20, remove.multiple=F, edgesize = 10, labelsize=5,label.cex=TRUE,label.n=30,edges.min=2)
+
+netstat <- networkStat(NetMatrix)
+summary(netstat,k=10)
+
+```
+
+
+# Multivariate analysis and machine learning
+
+```{r}
+field="ID"
+ngrams=1
+method="MCA"
+quali.supp=NULL
+quanti.supp=NULL
+minDegree=2 
+clust="auto"
+k.max=5
+stemming=T
+labelsize=10
+documents=2 
+graph=TRUE
+remove.terms=NULL
+synonyms=NULL
+binary=TRUE
+
+
+
+# Create a bipartite network of Keyword plus
+           #
+           # each row represents a manuscript
+           # each column represents a keyword (1 if present, 0 if absent in a document)
+bib2.test.df=termExtraction(bib.test.df,Field="ID",remove.numbers=TRUE, stemming=stemming, language="english", remove.terms = remove.terms, synonyms = synonyms, keep.terms=NULL, verbose=FALSE)
+           
+CW <- cocMatrix(bib2.test.df, Field = "ID_TM", type="matrix", sep=";",binary=binary)
+# Define minimum degree (number of occurrences of each Keyword)
+CW=CW[,colSums(CW)>=minDegree]
+CW=CW[,!(colnames(CW) %in% "NA")]
+# Delete empty rows
+CW=CW[rowSums(CW)>0,]
+
+
+colnames(CW)=tolower(colnames(CW))
+rownames(CW)=tolower(rownames(CW))
+p=dim(CW)[2] 
+quali=NULL
+quanti=NULL
+  # Perform Multiple Correspondence Analysis (MCA)
+  if (!is.null(quali.supp)){
+    ind=which(row.names(QSUPP) %in% row.names(CW))
+    QSUPP=as.data.frame(QSUPP[ind,])
+    CW=cbind(CW,QSUPP)
+    quali=(p+1):dim(CW)[2]
+    names(CW)[quali]=names(M)[quali.supp]
+  }
+  if (!is.null(quanti.supp)){
+    ind=which(row.names(SUPP) %in% row.names(CW))
+    SUPP=as.data.frame(SUPP[ind,])
+    CW=cbind(CW,SUPP)
+    quanti=(p+1+length(quali)):dim(CW)[2]
+    names(CW)[quanti]=names(M)[quanti.supp]
+  }
+  library("FactoMineR")
+  library("factoextra")
+  results <- factorial(CW,method=method,quanti=quanti,quali=quali) # factorial and eigCorrection
+  res.mca <- results$res.mca
+  df <- results$df
+  docCoord <- results$docCoord
+  df_quali <- results$df_quali
+  df_quanti <- results$df_quanti
+
+  
+### Total Citations of documents
+  if ("TC" %in% names(bib.test.df) & method!="MDS"){docCoord$TC=as.numeric(bib.test.df[toupper(rownames(docCoord)),"TC"])}  
+
+  # Selection of optimal number of clusters (gap statistics)
+  #a=fviz_nbclust((df), kmeans, method = "gap_stat",k.max=k.max)['data']$data$y
+  km.res=hclust(dist(df),method="average")
+  
+  if (clust=="auto"){
+      clust=min((length(km.res$height)-which.max(diff(km.res$height))+1),k.max)
+      }else{clust=max(2,min(as.numeric(clust),k.max))}
+  
+  km.res$data=df
+  km.res$cluster=cutree(km.res,k=clust)
+  km.res$data.clust=cbind(km.res$data,km.res$cluster)
+  names(km.res$data.clust)[3]="clust"
+  centers<- km.res$data.clust %>% group_by(clust) %>% 
+    summarise("Dim.1"=mean(Dim.1),"Dim.2"=mean(Dim.2)) %>% 
+    as.data.frame()
+  
+  #km.res$centers=centers[,c(2,3,1)]
+  km.res$centers=centers[,c(2,1)]  
+
+# visualize clustering results
+cbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7") # http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/
+
+  b=fviz_cluster(km.res, stand=FALSE, data = df,labelsize=labelsize, repel = TRUE)+
+    theme_minimal()+
+    scale_color_manual(values = cbPalette[1:clust])+
+    scale_fill_manual(values = cbPalette[1:clust]) +
+    labs(title= paste("Conceptual structure map - method: ",method,collapse="",sep="")) +
+    geom_point() +
+    geom_hline(yintercept=0, linetype="dashed", color = adjustcolor("grey40",alpha.f = 0.7))+
+    geom_vline(xintercept=0, linetype="dashed", color = adjustcolor("grey40",alpha.f = 0.7))+
+    theme(
+      #panel.border =  element_rect(fill=NA, size = 0.3, linetype = 'dashed', colour = adjustcolor("gray60",alpha.f = 0.7)),
+          text = element_text(size=labelsize),
+          axis.title=element_text(size=labelsize,face="bold"),
+          plot.title=element_text(size=labelsize+1,face="bold"),
+          panel.background = element_rect(fill = "white", colour = "white"),
+          #panel.grid.major = element_line(size = 0.3, linetype = 'dashed', colour = adjustcolor("gray60",alpha.f = 0.7)),
+          axis.line.x = element_line(color="black",size=0.5),
+          axis.line.y = element_line(color="black",size=0.5),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank()) + 
+    xlab(paste("Dimension 1 (",round(res.mca$eigCorr$perc[1],1),"%)",sep="")) +
+    ylab(paste("Dimension 2 (",round(res.mca$eigCorr$perc[2],1),"%)",sep="")) + 
+    theme(legend.position="none")
+   
+if (isTRUE(graph)){plot(b)}
+  
+  
+  
+ b_dend <- fviz_dend(km.res,
+                     rect = TRUE, 
+                     k=clust,
+                     k_colors = cbPalette[1:clust],
+                     cex=labelsize/20, 
+                     main="Research front tree")+  #main="Topic Dendrogram"
+    #scale_color_manual(values = cbPalette[(clust+1):1])+
+    #scale_fill_manual(values = cbPalette[(clust+1):1])+
+    theme(plot.title=element_text(size=labelsize+1,face="bold"), 
+          axis.title=element_text(size=labelsize,face="bold") ,
+          panel.background = element_rect(fill = "white",
+                                          colour = "white"),
+          #size = 1, linetype = "solid"),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank())
+ 
+ if (isTRUE(graph)){plot(b_dend)}
+```
+
+
+```{r}
+pca.dat <- altmetric.summary %>% mutate(Title = bib_test_set$Title,
+                                        DOI = bib_test_set$DOI,
+                                        scopus_citation = bib_test_set$`Cited by`) %>% mutate(grant = ifelse(is.na(funding), "With fund", "Without fund")) 
+
+pca.dat2 <- left_join(pca.dat,Study_characteristic,by=c("DOI" = "DOI_manual")) %>% select(Altmetric.score, policy, patent, scopus_citation,Evidence_stream, Review_approach_claimed,grant,Ref_id)
+# replace NA by 0
+pca.dat2$scopus_citation[which(is.na(pca.dat2$scopus_citation))] <- 0
+
+# merge with Population
+#pca.dat3 <- merge(pca.dat2,Population,by="Ref_id")
+# replace NA by 0
+#pca.dat3$scopus_citation[which(is.na(pca.dat2$scopus_citation))] <- 0
+
+# pca
+ALAN.pca <- FactoMineR::PCA(pca.dat2[,1:4], graph = FALSE)
+
+pca.dat2$Evidence_stream <- as.factor(pca.dat2$Evidence_stream)
+pca.dat2$Review_approach_claimed <- as.factor(pca.dat2$Review_approach_claimed)
+pca.dat2$grant <- as.factor(pca.dat2$grant)
+
+#ALAN.pca <- FactoMineR::PCA(pca.dat3[,2:5], graph = FALSE)
+#pca.dat3$Population_code <- as.factor(pca.dat3$Population_code)
+# pca.dat2 %>% filter(Evidence_stream=="Environment and Ecology")
+# visualize
+# use habillage to specify groups for coloring
+factoextra::fviz_pca_ind(ALAN.pca,
+             label = "none", # hide individual labels
+             habillage = pca.dat2$Evidence_stream, # color by discipline - need to be factor rather than character
+             palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE, 
+             addEllipses = TRUE # Concentration ellipses
+             )
+
+
+```
+
+
+
+# Attention analysis
+
+```{r altmetric}
+# load data
+bib_test_set <- read_csv(here("Data","bib_test_set.csv")) 
+
+altmetric.crawler <- list(NULL)
+for (n in 1:length(bib_test_set$DOI)) {
+ # format altmetric object
+  format.Altmetric <- function(altmetric.object) {
+  stats <- altmetric.object[grep("^cited", names(altmetric.object))]
+  stats <- data.frame(stats, stringsAsFactors = FALSE)
+  data.frame(paper_title = altmetric.object$title,
+             journal = altmetric.object$journal,
+             doi = altmetric.object$doi,
+             #subject = altmetric.object$subjects,
+             Altmetric.score = altmetric.object$score,
+             stats = stats)
+}
+   # JASON formate
+  altmetric.crawler[[n]]  <-  try(list(format.Altmetric(getAltmetrics(doi = bib_test_set$DOI[n])))) # https://stackoverflow.com/questions/14059657/how-to-skip-an-error-in-a-loop?rq=1
+  
+  # create a dataframe function
+  altmetric_df <- function(altmetric.object) {
+  df <- data.frame(t(unlist(altmetric.object)), stringsAsFactors = FALSE)
+  }
+  #altmetric.crawler[[n]]  <-  try(list(altmetric_df(getAltmetrics(doi = DOIs[n]))))
+  # create a function to summarize Altmetric object
+  summary.altmetric <- function(x, ...) {
+  if (inherits(x, "altmetric"))  {
+string <- "Altmetrics on: \"%s\" with altmetric_id: %s published in %s."
+vals   <- c(x$title,  x$altmetric_id, x$journal)
+ if("journal" %in% names(x)) {
+  cat(do.call(sprintf, as.list(c(string, vals))))
+ } else {
+   string <- "Altmetrics on: \"%s\" with altmetric_id: %s"
+   cat(do.call(sprintf, as.list(c(string, vals))))
+ }
+  cat("\n")
+  stats <- x[grep("^cited", names(x))]
+  stats <- data.frame(stats, stringsAsFactors = FALSE)
+  print(data.frame(stats = t(stats)))
+  }
+}
+  # crawl
+ # altmetric.crawler[[n]] <- try(list(summary.altmetric(getAltmetrics(doi = DOIs[n]))))
+}
+
+# save results from altmetric.crawler and retrieve lists within lists
+altmetric.crawler2 <- sapply(altmetric.crawler, function(x) {x})
+
+# retrieve stats
+altmetric.summary <- data.frame(paper_title = sapply(altmetric.crawler2, function(x)  ifelse(class(x) == "data.frame",x$paper_title,NA)),
+           journal = sapply(altmetric.crawler2, function(x) ifelse(class(x) == "data.frame",x$journal,NA)),
+           doi = sapply(altmetric.crawler2, function(x) ifelse(class(x) == "data.frame",x$doi,NA)),
+           #subject = sapply(altmetric.crawler2, function(x) ifelse(class(x) == "data.frame",x$subject,NA)),
+           Altmetric.score = sapply(altmetric.crawler2, function(x) ifelse(class(x) == "data.frame",x$Altmetric.score,0)),
+           policy = sapply(altmetric.crawler2, function(x) ifelse(class(x) == "data.frame",ifelse(!is.null(x$stats.cited_by_policies_count),x$stats.cited_by_policies_count,0),0)),
+           patent = sapply(altmetric.crawler2, function(x) ifelse(class(x) == "data.frame",ifelse(!is.null(x$stats.cited_by_patents_count),x$stats.cited_by_patents_count,0),0))
+           )
+
+bib_test_set <- bib_test_set %>% mutate(Altmetric.score = altmetric.summary$Altmetric.score, policy = altmetric.summary$policy, patent = altmetric.summary$patent)
+
+# citation vs. altmetric score
+plot(bib_test_set$`Cited by`, bib_test_set$Altmetric.score)
+
+
+# match with funding information
+#altmetric.summary$funding <- bib_test_set$`Funding Details`
+
+#write.csv(altmetric.summary,"./altmetric.summary.csv")
+
+#altmetric.summary <- altmetric.summary %>% mutate(funding.yes.no = ifelse(!is.na(funding),"with funding","without funding"))
+
+#all.sum <- altmetric.summary %>% group_by(funding.yes.no) %>% 
+#  summarise(Altmetric.score = mean(Altmetric.score),
+#            patent = mean(patent),
+#            policy = mean(policy))
+
+```
